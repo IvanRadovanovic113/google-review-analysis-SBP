@@ -1,0 +1,22 @@
+# Podaci (preveliki za git, ~2.1 GB)
+podaci/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+
+# Environment varijable
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store

@@ -1,0 +1,49 @@
+Kolekcija: places
+Odgovara meta fajlovima — jedan dokument = jedan biznis.
+js{
+  _id: ObjectId(),
+  gmap_id: "0x8862134e67ff5c87:0x38b5e2ae99cd1fcf",  // prirodni ključ, indexed
+  name: "Purple Peanut",
+  address: "2357 Whitesburg Dr # D, Huntsville, AL 35801",
+  state_name: "Alabama",                // dodato pri importu (u zavisnosti od zemlje)
+  location: {                           // GeoJSON za $near upite
+    type: "Point",
+    coordinates: [-86.574, 34.713]      // [longitude, latitude]
+  },
+  category: ["Boutique"],
+  description: null,
+  avg_rating: 4.6,
+  num_of_reviews: 17,
+  price: null,
+  hours: [
+    { day: "Monday", open: "10AM", close: "5PM" },   // parsirati iz raw stringa
+    ...
+  ],
+  misc: {
+    service_options: ["In-store shopping", "Delivery"],
+    accessibility: ["Wheelchair accessible entrance"],
+    planning: ["Quick visit"],
+    payments: ["Credit cards", ...]
+  },
+  url: "https://..."
+}
+
+
+Kolekcija: reviews
+Odgovara review fajlovima — jedan dokument = jedna recenzija.
+js{
+  _id: ObjectId(),
+  gmap_id: "0x8862134e67ff5c87:0x38b5e2ae99cd1fcf",  // foreign key → places, indexed
+  state_name: "Alabama",               // dodato pri importu
+  user_id: "103378997989317552200",
+  user_name: "Hadley Coan",
+  time: ISODate("2021-07-15T..."),     // konvertovati iz Unix ms timestamp-a
+  rating: 5,
+  text: "Love this little local shop...",
+  has_pics: false,                     // bool derivovan iz pics polja
+  response: {                          // null ako nema odgovora vlasnika
+    time: ISODate("..."),
+    text: "Thank you so much..."
+  }
+}
+Veza: reviews.gmap_id → places.gmap_id (koristiš $lookup po ovom polju)
