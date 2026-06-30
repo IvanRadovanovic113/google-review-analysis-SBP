@@ -10,4 +10,7 @@
 	- prilikom ucitavanja podataka srediti price tag odnosno da kao prvo nema W vec da svi butu $ a zatim prevesti $ u int radi lakseg pisanja upita i tumacenja
 	- u kolekciju sa drzavama dodati broj biznisa i broj onih koji imaju ucenu
 	- potencijalno nova kolekcija ili je dodati i ovu sa drzavama gde bi se ubacile ove infomracije o rangu cene i prosecnom ocenom
-
+4. upit
+	- index za reviews nad state, gmap_id
+	- index nad gmap_id u places je vec dodat za upit 1
+	
