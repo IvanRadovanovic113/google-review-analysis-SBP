@@ -4,4 +4,10 @@
 	- index za category zbog $in
 2. upit
 	- takodje geo lokacija
-	- nova kolekcija sa prosecnim ocenama kako se ne bi savki put racunalo 
+	- nova kolekcija drzava sa prosecnim ocenama kako se ne bi savki put racunalo 
+3. upit
+	- napisati pyhon skriptu ili upit koji ce pracunavati avg rating za sve biznise
+	- prilikom ucitavanja podataka srediti price tag odnosno da kao prvo nema W vec da svi butu $ a zatim prevesti $ u int radi lakseg pisanja upita i tumacenja
+	- u kolekciju sa drzavama dodati broj biznisa i broj onih koji imaju ucenu
+	- potencijalno nova kolekcija ili je dodati i ovu sa drzavama gde bi se ubacile ove infomracije o rangu cene i prosecnom ocenom
+

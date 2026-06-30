@@ -1,0 +1,47 @@
+// ukupno mesta i broj sa cenom po drzavi
+const statMap = {}
+db.places.aggregate([
+  { $group: {
+      _id: "$state_name",
+      ukupno:   { $sum: 1 },
+      sa_cenom: { $sum: { $cond: [{ $ne: ["$price", null] }, 1, 0] } }
+  }}
+]).toArray().forEach(d => { statMap[d._id] = d })
+
+// glavni upit
+db.places.aggregate([
+  { $match: { price: { $ne: null } } },
+  { $addFields: {
+      price_norm: { $switch: {
+          branches: [
+            { case: { $in: ["$price", [{ $literal: "$" },    "₩"    ]] }, then: { $literal: "$"    } },
+            { case: { $in: ["$price", [{ $literal: "$$" },   "₩₩"   ]] }, then: { $literal: "$$"   } },
+            { case: { $in: ["$price", [{ $literal: "$$$" },  "₩₩₩"  ]] }, then: { $literal: "$$$"  } },
+            { case: { $in: ["$price", [{ $literal: "$$$$" }, "₩₩₩₩" ]] }, then: { $literal: "$$$$" } },
+          ],
+          default: null
+      }}
+  }},
+  { $match: { price_norm: { $ne: null } } },
+  { $group: {
+      _id: { cenovni_rang: "$price_norm", drzava: "$state_name" },
+      prosecna_ocena: { $avg: "$avg_rating" },
+      broj_mesta:     { $sum: 1 }
+  }},
+  { $group: {
+      _id: "$_id.drzava",
+      cenovni_rangovi: { $push: {
+          rang:           "$_id.cenovni_rang",
+          prosecna_ocena: { $round: ["$prosecna_ocena", 2] },
+          broj_mesta:     "$broj_mesta"
+      }}
+  }},
+  { $project: { _id: 0, drzava: "$_id", cenovni_rangovi: { $sortArray: { input: "$cenovni_rangovi", sortBy: { prosecna_ocena: -1 } } } } },
+  { $sort: { drzava: 1 } }
+]).toArray().map(d => ({
+  drzava:           d.drzava,
+  ukupno_mesta:     statMap[d.drzava]?.ukupno || 0,
+  mesta_sa_cenom:   statMap[d.drzava]?.sa_cenom || 0,
+  procenat_sa_cenom: Math.round((statMap[d.drzava]?.sa_cenom / statMap[d.drzava]?.ukupno) * 100) + "%",
+  cenovni_rangovi:  d.cenovni_rangovi
+}))
