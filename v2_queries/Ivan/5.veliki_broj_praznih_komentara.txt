@@ -1,0 +1,45 @@
+// v2: procenat recenzija bez teksta po biznisu cita se direktno iz places.pct_bez_teksta
+// (vec izracunato pri ucitavanju - vidi build_pct_bez_teksta u load_data_Ivan_v2.py).
+// Prosek po kategoriji cita se iz 'category_text_stats'. Nema vise agregacije nad 6.7M recenzija.
+//
+// Napomena: minRec filter se ovde primenjuje na places.num_of_reviews (broj recenzija iz
+// izvornih meta podataka) umesto na prebrojavanje iz reviews kolekcije kao u v1 - vrednosti
+// bi trebalo da budu priblizno iste, ali mogu blago odstupati ako se num_of_reviews iz meta
+// fajla ne poklapa tacno sa stvarnim brojem importovanih recenzija za taj biznis.
+
+const drzava    = "Alaska"
+const minRec    = 30
+const minFaktor = 2.0
+
+const katMap = {}
+db.category_text_stats.find().forEach(d => { katMap[d._id] = d.prosek_pct_bez_teksta })
+
+const globalniProsekDoc = db.places.aggregate([
+  { $match: { state_name: drzava, pct_bez_teksta: { $ne: null } } },
+  { $group: { _id: null, prosek: { $avg: "$pct_bez_teksta" } } }
+]).toArray()[0]
+const globalniProsek = globalniProsekDoc ? globalniProsekDoc.prosek : 0
+
+db.places.find({
+  state_name: drzava,
+  pct_bez_teksta: { $ne: null },
+  num_of_reviews: { $gte: minRec }
+}).toArray()
+  .map(d => {
+    const catAvgs = (d.category || []).map(cat => katMap[cat] || 0)
+    const srednji = catAvgs.length > 0
+      ? catAvgs.reduce((a, b) => a + b, 0) / catAvgs.length
+      : globalniProsek
+    return {
+      naziv:               d.name,
+      adresa:              d.address,
+      kategorije:          d.category,
+      procenat_bez_teksta: Math.round(d.pct_bez_teksta * 100) + "%",
+      prosek_kategorija:   Math.round(srednji * 100) + "%",
+      faktor:              Math.round(d.pct_bez_teksta / Math.max(srednji, 0.01) * 10) / 10,
+      ukupno_recenzija:    d.num_of_reviews
+    }
+  })
+  .filter(d => d.faktor >= minFaktor)
+  .sort((a, b) => b.faktor - a.faktor)
+  .slice(0, 20)

@@ -1,0 +1,38 @@
+// v2: prvi pipeline (drzavni prosek po kategoriji, ranije COLLSCAN nad celim places) zamenjen
+// citanjem iz pre-computed kolekcije 'category_stats' (indeksirana { state_name: 1, category: 1 }).
+// Glavni regionalni upit koristi places{ location: "2dsphere" }.
+
+const koordinate = [-75.5474, 39.7447]
+const radijusKm  = 100
+const drzava     = "Delaware"
+const maxMesta   = 5
+
+// prosek i broj mesta po kategoriji za celu drzavu - iz pre-computed kolekcije
+const prosekMap = {}
+db.category_stats.find({ state_name: drzava }).forEach(d => {
+  prosekMap[d.category] = { prosek: d.prosek_recenzija, broj_mesta: d.broj_mesta }
+})
+
+// glavni upit za region (isti kao v1)
+db.places.aggregate([
+  { $match: {
+      state_name: drzava,
+      location: { $geoWithin: { $centerSphere: [koordinate, radijusKm / 6371] }}
+  }},
+  { $unwind: "$category" },
+  { $group: {
+      _id: "$category",
+      broj_mesta:    { $sum: 1 },
+      avg_recenzija: { $avg: "$num_of_reviews" }
+  }},
+  { $match: { broj_mesta: { $lt: maxMesta } }}
+]).toArray()
+  .filter(d => d.avg_recenzija > 1.5 * (prosekMap[d._id]?.prosek || 0))
+  .map(d => ({
+      kategorija:           d._id,
+      broj_mesta_region:    d.broj_mesta,
+      broj_mesta_drzave:    prosekMap[d._id]?.broj_mesta || 0,
+      avg_recenzija_region: Math.round(d.avg_recenzija),
+      avg_recenzija_drzave: Math.round(prosekMap[d._id]?.prosek || 0)
+  }))
+  .sort((a, b) => (a.broj_mesta_region / a.broj_mesta_drzave) - (b.broj_mesta_region / b.broj_mesta_drzave))

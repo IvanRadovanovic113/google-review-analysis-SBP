@@ -1,0 +1,139 @@
+====================================================
+UPIT 1 - Preporuke za unapredjenje konkurencije
+====================================================
+Strategija:          COLLSCAN (bez indeksa)
+Dokumenti skenirani: 66,800 / 66,800 (100%) — uvek
+Indeksni kljucevi:   0
+
+Broj vracenih rezultata zavisi od gustine kategorije u zadatom radijusu.
+Efikasnost = skenirani / vraceni.
+
+Drzava          Kategorija lokala              Vraceno  Vreme   Efikasnost
+--------------- ------------------------------ -------- ------- ----------
+Alaska          Farmers' market                4        45ms    1 : 16,700
+Delaware        Apartment complex              3        49ms    1 : 22,267
+Rhode Island    Dominican restaurant           22       44ms    1 :  3,036
+Vermont         Security system supplier (+4)  4        47ms    1 : 16,700
+Wyoming         Chiropractor (+4)              4        49ms    1 : 16,700
+
+Vreme je gotovo identicno (~44-49ms) bez obzira na broj vracenih, sto potvrdjuje
+da je usko grlo COLLSCAN a ne obrada rezultata. Rhode Island vraca 22 rezultata
+jer je Dominican restaurant gusta urbana kategorija u malom radijusu.
+
+====================================================
+UPIT 2a - Prosek po kategoriji za celu drzavu
+====================================================
+Strategija:          COLLSCAN (bez indeksa)
+Dokumenti skenirani: 66,800 / 66,800 (100%) — uvek
+Indeksni kljucevi:   0
+
+Vraceno = broj jedinstvenih kategorija u drzavi (posle $group).
+Efikasnost = skenirani / kategorija vracenih.
+
+Drzava          Prosli filter  Posle $unwind  Kat. vraceno  Vreme   Efikasnost
+--------------- -------------- -------------- ------------- ------- ----------
+Alaska          12,774         26,132         2,132         51ms    1 : 31
+Delaware        14,706         35,663         2,214         59ms    1 : 30
+Rhode Island    15,941         35,513         2,285         66ms    1 : 29
+Vermont         11,291         24,792         2,002         65ms    1 : 33
+Wyoming         12,088         26,268         1,986         53ms    1 : 34
+
+====================================================
+UPIT 2b - Kategorije u zadatom regionu
+====================================================
+Strategija:          COLLSCAN (bez indeksa)
+Dokumenti skenirani: 66,800 / 66,800 (100%) — uvek
+Indeksni kljucevi:   0
+
+Efikasnost racunata na broj mesta u regionu (pre filtera po broju mesta u kategoriji).
+Radijus je prilagodjen velicini drzave kako bi obuhvatio smislenu urbanu oblast.
+
+Drzava          Radijus  Mesta u regionu  Kat. vraceno  Vreme   Efikasnost
+--------------- -------- ---------------- ------------- ------- ----------
+Alaska          150km    7,476            1,192         56ms    1 :  8.9
+Delaware         50km    8,104            1,103         77ms    1 :  8.2
+Rhode Island     40km    14,340           1,211         77ms    1 :  4.7
+Vermont          80km    6,327            1,099         64ms    1 : 10.6
+Wyoming         150km    2,889              988         48ms    1 : 23.1
+
+Wyoming ima samo 2,889 mesta u radijusu od 150km oko Cheyenne-a, dok Rhode Island
+vraca 14,340 mesta u radijusu od svega 40km oko Providencea — razlika u gustini
+naseljenosti je drasticna i vidljiva u podacima.
+
+====================================================
+UPIT 3a - Statistike pokrivenosti cenom po drzavi
+====================================================
+Strategija:          COLLSCAN (bez indeksa) — bez filtera, skenira celu kolekciju
+Dokumenti skenirani: 66,800 / 66,800 (100%)
+Dokumenti vraceni:   5 (jedan red po drzavi)
+Indeksni kljucevi:   0
+Vreme izvrsavanja:   83ms
+Efikasnost:          1 : 13,360
+
+====================================================
+UPIT 3b - Cenovni rangovi i prosecne ocene
+====================================================
+Strategija:          COLLSCAN (bez indeksa)
+Dokumenti skenirani: 66,800 / 66,800 (100%) — uvek
+Dokumenti vraceni:   uvek 4 (jedan po cenovnom rangu: $, $$, $$$, $$$$)
+Indeksni kljucevi:   0
+
+Posto je finalni izlaz uvek 4 reda, efikasnost je racunata na broj mesta sa cenom
+(intermedijerni filter) kako bi razlike medjju drzavama bile vidljive.
+
+Drzava          Sa cenom  Vreme   Efikasnost
+--------------- --------- ------- ----------
+Alaska          1,585     37ms    1 : 42
+Delaware        2,883     56ms    1 : 23
+Rhode Island    3,279     51ms    1 : 20
+Vermont         1,724     59ms    1 : 39
+Wyoming         1,693     52ms    1 : 39
+
+Rhode Island i Delaware imaju znatno vise mesta sa upisanom cenom od ostalih drzava,
+sto odrazava vecu gustinu urbanih biznisa koji imaju potpunije podatke.
+
+====================================================
+UPIT 4 - Nagli pad ocene u vremenskom prozoru
+====================================================
+Strategija:          COLLSCAN reviews + COLLSCAN places ($lookup, bez indeksa)
+Indeksni kljucevi:   0
+Vremenski prozor:    2021-08-09 → 2021-09-08 (30 dana)
+
+Reviews kolekcija se uvek skenira u celosti (6,707,912 dok.).
+$lookup za svaki pronadjeni biznis radi poseban COLLSCAN nad places (66,800 dok.).
+Efikasnost = ukupno skenirano / vraceno.
+
+Drzava       Rev. u prozoru  $lookup sken.  Places sken.  Ukupno sken.   Vraceno  Vreme     Efikasnost
+------------ --------------- -------------- ------------- -------------- -------- --------- ----------
+Alaska       667             119            7,949,200     14,657,112     16       6,844ms   1 : 916,069
+Delaware     982             144            9,619,200     16,327,112     20       7,853ms   1 : 816,356
+Rhode Island 876             147            9,819,600     16,527,512     19       8,115ms   1 : 869,869
+Vermont      462             85             5,678,000     12,385,912     9        5,900ms   1 : 1,376,213
+Wyoming      486             80             5,344,000     12,051,912     9        5,933ms   1 : 1,339,101
+
+Vermont i Wyoming imaju paradoksalno losiju efikasnost od Delaware-a: manje recenzija
+u prozoru znaci manji uzorak i rede padove ocene koji prelaze prag od 0.5, pa je
+finalni izlaz samo 9 rezultata dok se cela kolekcija svejedno skenira.
+
+====================================================
+UPIT 5 - Biznisi sa visokim procentom recenzija bez teksta
+====================================================
+Strategija:          COLLSCAN reviews + COLLSCAN places ($lookup, bez indeksa)
+Indeksni kljucevi:   0
+
+Reviews kolekcija se uvek skenira u celosti. $lookup za svaki biznis koji predje
+filter radi poseban COLLSCAN nad places (66,800 dok.).
+Efikasnost racunata na izlaz iz pipeline-a (pre JS filtera na top 20).
+
+Drzava          Reviews proc.  $lookup sken.    Ukupno sken.     Vraceno  Vreme       Efikasnost
+--------------- -------------- ---------------- ---------------- -------- ----------- ----------
+Alaska          1,051,246      347,694,000      354,401,912      5,230    165,589ms   1 : 67,764
+Delaware        1,885,948      499,797,600      506,505,512      7,517    257,630ms   1 : 67,384
+Rhode Island    1,777,094      537,339,200      544,047,112      8,076    279,134ms   1 : 67,363
+Vermont           852,203      308,616,000      315,323,912      4,631    164,629ms   1 : 68,093
+Wyoming         1,141,421      338,275,200      344,983,112      5,081    182,502ms   1 : 67,898
+
+Efikasnost je gotovo identicna za sve drzave (~1:67,500) jer je odnos uvek priblizno
+66,800:1 po biznisu — svaki $lookup skenira celu places kolekciju. Vreme se razlikuje
+proporcionalno broju biznisa koji prodju minRec filter: Delaware (7,482 lookups, ~4.3min)
+vs Vermont (4,620 lookups, ~2.7min).

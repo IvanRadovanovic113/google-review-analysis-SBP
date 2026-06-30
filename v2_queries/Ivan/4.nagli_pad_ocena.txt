@@ -1,0 +1,48 @@
+// v2: upit je IDENTICAN v1 verziji - optimizacija je iskljucivo na nivou indeksa.
+// Koristi: reviews{ state_name: 1, time: 1 } compound za pocetni $match,
+//          places{ gmap_id: 1 } unique za $lookup.
+
+const drzava        = "Alaska"
+const datumDo       = new Date("2021-09-08")
+const danaProzor    = 30
+const minRecenzija  = 2
+const minPad        = 0.5
+
+const datumOd = new Date(datumDo.getTime() - danaProzor * 24 * 60 * 60 * 1000)
+
+db.reviews.aggregate([
+  { $match: {
+      state_name: drzava,
+      time: { $gte: datumOd, $lte: datumDo }
+  }},
+  { $group: {
+      _id: "$gmap_id",
+      avg_u_prozoru:  { $avg: "$rating" },
+      broj_u_prozoru: { $sum: 1 }
+  }},
+  { $match: { broj_u_prozoru: { $gte: minRecenzija } } },
+  { $lookup: {
+      from: "places",
+      localField: "_id",
+      foreignField: "gmap_id",
+      as: "place"
+  }},
+  { $unwind: "$place" },
+  { $match: { "place.num_of_reviews": { $gte: 10 } } },
+  { $addFields: {
+      pad_ocene: { $subtract: ["$place.avg_rating", "$avg_u_prozoru"] }
+  }},
+  { $match: { pad_ocene: { $gte: minPad } } },
+  { $sort: { pad_ocene: -1 } },
+  { $limit: 20 },
+  { $project: {
+      _id: 0,
+      naziv:            "$place.name",
+      adresa:           "$place.address",
+      avg_rating:       "$place.avg_rating",
+      avg_u_prozoru:    { $round: ["$avg_u_prozoru", 2] },
+      broj_u_prozoru:   1,
+      ukupno_recenzija: "$place.num_of_reviews",
+      pad_ocene:        { $round: ["$pad_ocene", 2] }
+  }}
+])

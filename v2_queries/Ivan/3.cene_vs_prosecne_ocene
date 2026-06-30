@@ -1,0 +1,25 @@
+// v2: 'price' je vec normalizovan int (1-4) pri ucitavanju, nema potrebe za $switch normalizacijom.
+// Sve statistike citaju se direktno iz pre-computed kolekcija 'states' i 'price_tier_stats',
+// bez ijedne agregacije nad 'places' (koja ima 66,800 dokumenata).
+
+const statMap = {}
+db.states.find().forEach(d => { statMap[d._id] = d })
+
+const cenovniMap = {}
+db.price_tier_stats.find().forEach(d => {
+  if (!cenovniMap[d.state_name]) cenovniMap[d.state_name] = []
+  cenovniMap[d.state_name].push({
+      rang:           d.price,
+      prosecna_ocena: Math.round(d.prosecna_ocena * 100) / 100,
+      broj_mesta:     d.broj_mesta
+  })
+})
+
+const rezultat = Object.keys(cenovniMap).sort().map(drzava => ({
+  drzava:            drzava,
+  ukupno_mesta:      statMap[drzava]?.ukupno_mesta || 0,
+  mesta_sa_cenom:    statMap[drzava]?.mesta_sa_cenom || 0,
+  procenat_sa_cenom: (statMap[drzava]?.procenat_sa_cenom || 0) + "%",
+  cenovni_rangovi:   cenovniMap[drzava].sort((a, b) => b.prosecna_ocena - a.prosecna_ocena)
+}))
+print(JSON.stringify(rezultat, null, 2))

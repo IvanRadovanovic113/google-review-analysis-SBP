@@ -1,0 +1,37 @@
+// v2: upit je IDENTICAN v1 verziji - optimizacija je iskljucivo na nivou indeksa.
+// Koristi: places{ location: "2dsphere" }, places{ gmap_id: 1 } unique, places{ category: 1 }
+
+const lokal = db.places.findOne(
+  { gmap_id: "0x89e44fe1c2a2a2c3:0x5fc9f6751fb29737" },
+  { location: 1, name: 1, category: 1, misc: 1, avg_rating: 1 }
+)
+
+db.places.aggregate([
+  { $match: {
+      location:  { $geoWithin: { $centerSphere: [lokal.location.coordinates, 0.0005] }},
+      category:  { $in: lokal.category },
+      gmap_id:   { $ne: lokal.gmap_id }
+  }},
+  { $addFields: {
+      razlika_service_options: { $setDifference: ["$misc.service_options", lokal.misc.service_options || []] },
+      razlika_offerings:       { $setDifference: ["$misc.offerings",       lokal.misc.offerings       || []] },
+      razlika_accessibility:   { $setDifference: ["$misc.accessibility",   lokal.misc.accessibility   || []] },
+      razlika_amenities:       { $setDifference: ["$misc.amenities",       lokal.misc.amenities       || []] },
+      razlika_planning:        { $setDifference: ["$misc.planning",        lokal.misc.planning        || []] },
+      razlika_payments:        { $setDifference: ["$misc.payments",        lokal.misc.payments        || []] },
+      moja_ocena:              { $literal: lokal.avg_rating }
+  }},
+  { $project: {
+      name: 1,
+      avg_rating: 1,
+      moja_ocena: 1,
+      razlika_service_options: 1,
+      razlika_offerings: 1,
+      razlika_accessibility: 1,
+      razlika_amenities: 1,
+      razlika_planning: 1,
+      razlika_payments: 1,
+      _id: 0
+  }},
+  { $sort: { avg_rating: -1 } }
+])
