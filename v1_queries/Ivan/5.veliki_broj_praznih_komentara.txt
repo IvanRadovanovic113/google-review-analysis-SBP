@@ -1,0 +1,54 @@
+const drzava    = "Alaska"
+const minRec    = 30
+const minFaktor = 2.0
+
+// per-biznis statistika + join sa places
+const podaci = db.reviews.aggregate([
+  { $match: { state_name: drzava } },
+  { $group: {
+      _id: "$gmap_id",
+      ukupno:     { $sum: 1 },
+      bez_teksta: { $sum: { $cond: [
+          { $or: [{ $eq: ["$text", null] }, { $eq: ["$text", ""] }] }, 1, 0
+      ]}}
+  }},
+  { $match: { ukupno: { $gte: minRec } } },
+  { $addFields: { procenat: { $divide: ["$bez_teksta", "$ukupno"] } } },
+  { $lookup: { from: "places", localField: "_id", foreignField: "gmap_id", as: "place" } },
+  { $unwind: "$place" }
+]).toArray()
+
+// prosek bez teksta po kategoriji
+const katSum = {}, katBroj = {}
+podaci.forEach(d => {
+  (d.place.category || []).forEach(cat => {
+    katSum[cat]  = (katSum[cat]  || 0) + d.procenat
+    katBroj[cat] = (katBroj[cat] || 0) + 1
+  })
+})
+const katMap = {}
+Object.keys(katSum).forEach(cat => { katMap[cat] = katSum[cat] / katBroj[cat] })
+
+// globalni prosek za biznise bez kategorije
+const globalniProsek = podaci.reduce((sum, d) => sum + d.procenat, 0) / podaci.length
+
+// filter i sort
+podaci
+  .map(d => {
+    const catAvgs = (d.place.category || []).map(cat => katMap[cat] || 0)
+    const srednji = catAvgs.length > 0
+      ? catAvgs.reduce((a, b) => a + b, 0) / catAvgs.length
+      : globalniProsek
+    return {
+      naziv:               d.place.name,
+      adresa:              d.place.address,
+      kategorije:          d.place.category,
+      procenat_bez_teksta: Math.round(d.procenat * 100) + "%",
+      prosek_kategorija:   Math.round(srednji * 100) + "%",
+      faktor:              Math.round(d.procenat / Math.max(srednji, 0.01) * 10) / 10,
+      ukupno_recenzija:    d.ukupno
+    }
+  })
+  .filter(d => d.faktor >= minFaktor)
+  .sort((a, b) => b.faktor - a.faktor)
+  .slice(0, 20)

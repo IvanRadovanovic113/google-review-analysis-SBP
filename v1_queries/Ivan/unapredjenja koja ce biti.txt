@@ -13,4 +13,6 @@
 4. upit
 	- index za reviews nad state, gmap_id
 	- index nad gmap_id u places je vec dodat za upit 1
-	
+5. upit
+	- kolekcija sa kategorijom i izracunatom vrednoscu
+	- ubaciti prosek praznih komentara u places kolekciju
