@@ -1,0 +1,7 @@
+1. upit
+	- dodati onu geo lokaciju da bude brze
+	- index za gmap_id
+	- index za category zbog $in
+2. upit
+	- takodje geo lokacija
+	- nova kolekcija sa prosecnim ocenama kako se ne bi savki put racunalo 

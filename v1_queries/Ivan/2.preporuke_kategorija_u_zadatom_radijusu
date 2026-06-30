@@ -1,0 +1,43 @@
+// Parametri
+const koordinate = [-75.5474, 39.7447]
+const radijusKm  = 100
+const drzava     = "Delaware"
+const maxMesta   = 5
+
+// prosek i broj mesta po kategoriji za celu drzavu
+const prosekMap = {}
+db.places.aggregate([
+  { $match: { state_name: drzava } },
+  { $unwind: "$category" },
+  { $group: {
+      _id: "$category",
+      prosek_drzave:     { $avg: "$num_of_reviews" },
+      broj_mesta_drzave: { $sum: 1 }
+  }}
+]).toArray().forEach(d => {
+  prosekMap[d._id] = { prosek: d.prosek_drzave, broj_mesta: d.broj_mesta_drzave }
+})
+
+// glavni upit za region
+db.places.aggregate([
+  { $match: {
+      state_name: drzava,
+      location: { $geoWithin: { $centerSphere: [koordinate, radijusKm / 6371] }}
+  }},
+  { $unwind: "$category" },
+  { $group: {
+      _id: "$category",
+      broj_mesta:    { $sum: 1 },
+      avg_recenzija: { $avg: "$num_of_reviews" }
+  }},
+  { $match: { broj_mesta: { $lt: maxMesta } }}
+]).toArray()
+  .filter(d => d.avg_recenzija > 1.5 * (prosekMap[d._id]?.prosek || 0))
+  .map(d => ({
+      kategorija:           d._id,
+      broj_mesta_region:    d.broj_mesta,
+      broj_mesta_drzave:    prosekMap[d._id]?.broj_mesta || 0,
+      avg_recenzija_region: Math.round(d.avg_recenzija),
+      avg_recenzija_drzave: Math.round(prosekMap[d._id]?.prosek || 0)
+  }))
+  .sort((a, b) => (a.broj_mesta_region / a.broj_mesta_drzave) - (b.broj_mesta_region / b.broj_mesta_drzave))
