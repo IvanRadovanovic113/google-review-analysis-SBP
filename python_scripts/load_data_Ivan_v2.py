@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -14,6 +15,10 @@ PRICE_MAP = {
     "$": 1, "$$": 2, "$$$": 3, "$$$$": 4,
     "₩": 1, "₩₩": 2, "₩₩₩": 3, "₩₩₩₩": 4,
 }
+
+
+def _fmt_time(s: float) -> str:
+    return f"{s/60:.1f}min" if s >= 60 else f"{s:.1f}s"
 
 
 def state_name_from_filename(path: Path) -> str:
@@ -297,34 +302,70 @@ def main():
     places_col  = db["places"]
     reviews_col = db["reviews"]
 
+    t_start = time.time()
+    timings = []
+
     print(f"\n--- Ucitavanje meta fajlova u 'places' ({len(meta_files)} fajlova) ---")
     total_places = 0
     states = []
+    t0 = time.time()
     for filepath in meta_files:
         state = state_name_from_filename(filepath)
         states.append(state)
+        tf = time.time()
         n = load_file(filepath, places_col, transform_place, state)
-        print(f"  {filepath.name}: {n:,} dokumenata ({state})")
+        print(f"  {filepath.name}: {n:,} dokumenata ({state}) [{_fmt_time(time.time() - tf)}]")
         total_places += n
-    print(f"Ucitano places (pre deduplikacije): {total_places:,}")
+    t_places = time.time() - t0
+    timings.append(("Ucitavanje places", t_places))
+    print(f"Ucitano places (pre deduplikacije): {total_places:,} [{_fmt_time(t_places)}]")
+
     print("--- Deduplikacija 'places' po gmap_id ---")
+    t0 = time.time()
     deduplicate_places(db)
-    print(f"Ukupno places: {places_col.count_documents({}):,}\n")
+    t_dedup = time.time() - t0
+    timings.append(("Deduplikacija places", t_dedup))
+    print(f"Ukupno places: {places_col.count_documents({}):,} [{_fmt_time(t_dedup)}]\n")
 
     print(f"--- Ucitavanje review fajlova u 'reviews' ({len(review_files)} fajlova) ---")
     total_reviews = 0
+    t0 = time.time()
     for filepath in review_files:
         state = state_name_from_filename(filepath)
+        tf = time.time()
         n = load_file(filepath, reviews_col, transform_review, state)
-        print(f"  {filepath.name}: {n:,} dokumenata ({state})")
+        print(f"  {filepath.name}: {n:,} dokumenata ({state}) [{_fmt_time(time.time() - tf)}]")
         total_reviews += n
-    print(f"Ukupno reviews: {total_reviews:,}\n")
+    t_reviews = time.time() - t0
+    timings.append(("Ucitavanje reviews", t_reviews))
+    print(f"Ukupno reviews: {total_reviews:,} [{_fmt_time(t_reviews)}]\n")
 
+    t0 = time.time()
     build_states_stats(db)
+    timings.append(("states stats", time.time() - t0))
+    print(f"  [vreme: {_fmt_time(timings[-1][1])}]")
+
+    t0 = time.time()
     build_category_stats(db)
+    timings.append(("category_stats", time.time() - t0))
+    print(f"  [vreme: {_fmt_time(timings[-1][1])}]")
+
+    t0 = time.time()
     build_price_tier_stats(db)
+    timings.append(("price_tier_stats", time.time() - t0))
+    print(f"  [vreme: {_fmt_time(timings[-1][1])}]")
+
+    t0 = time.time()
     build_pct_bez_teksta(db, states)
+    timings.append(("pct_bez_teksta (po drzavi)", time.time() - t0))
+    print(f"  [vreme: {_fmt_time(timings[-1][1])}]")
+
+    t0 = time.time()
     build_category_text_stats(db)
+    timings.append(("category_text_stats", time.time() - t0))
+    print(f"  [vreme: {_fmt_time(timings[-1][1])}]")
+
+    t_total = time.time() - t_start
 
     print("\nGotovo!")
     print(f"  places:              {places_col.count_documents({}):,}")
@@ -333,6 +374,13 @@ def main():
     print(f"  category_stats:      {db.category_stats.count_documents({}):,}")
     print(f"  price_tier_stats:    {db.price_tier_stats.count_documents({}):,}")
     print(f"  category_text_stats: {db.category_text_stats.count_documents({}):,}")
+
+    print("\n--- Vremena po fazama ---")
+    for label, elapsed in timings:
+        print(f"  {label:<30} {_fmt_time(elapsed):>10}")
+    print(f"  {'-'*42}")
+    print(f"  {'UKUPNO':<30} {_fmt_time(t_total):>10}")
+
     print("\nSledeci korak: python python_scripts/create_indexes.py")
 
 
