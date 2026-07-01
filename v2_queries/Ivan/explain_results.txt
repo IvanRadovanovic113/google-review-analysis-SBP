@@ -1,0 +1,115 @@
+====================================================
+UPIT 1 - Preporuke za unapredjenje konkurencije
+====================================================
+v1 strategija:       COLLSCAN (bez indeksa)
+v2 strategija:       IXSCAN — category_1 (Alaska, Delaware, Rhode Island, Vermont)
+                              location_2dsphere (Wyoming — geo selektivniji za 5 kategorija)
+
+Wyoming bira 2dsphere index jer query sadrzi 5 kategorija; MongoDB procenjuje da je
+geospatijalni index selektivniji od multi-vrednosnog category indeksa u tom slucaju.
+
+Drzava          Indeks             Kljucevi  Dok. sken.  Vraceno  Vreme   v1 Vreme
+--------------- ------------------ --------- ----------- -------- ------- --------
+Alaska          category_1         107       107         3        5ms     45ms
+Delaware        category_1         216       216         2        4ms     49ms
+Rhode Island    category_1         36        36          21       1ms     44ms
+Vermont         category_1         197       174         3        3ms     47ms
+Wyoming         location_2dsphere  289       270         3        4ms     49ms
+
+v1: uvek 66,800 dokumenata skeniranih (100% COLLSCAN)
+v2: 36–289 dokumenata skeniranih (~600x manje)
+Ubrzanje: ~10–45x
+
+====================================================
+UPIT 2 - Preporuke kategorija u zadatom radijusu
+====================================================
+v2 ima dve faze:
+  1. Drzavni proseci: citaju se iz pre-computed kolekcije 'category_stats' (.find()) — trivijalno brzo
+  2. Regionalni pipeline: isti kao v1, ali sa IXSCAN location_2dsphere umesto COLLSCAN
+
+v1 Q2a (drzavni proseci, COLLSCAN): 51–66ms — u v2 zamenjeno citanjem iz category_stats (~1ms)
+v1 Q2b (regionalni pipeline, COLLSCAN): 48–77ms
+
+Drzava          Dok. u regionu  Kljucevi  Dok. sken.  Kat. vraceno  Vreme   v1 Q2b Vreme
+--------------- --------------- --------- ----------- ------------- ------- -------------
+Alaska          7,435           7,564     7,547       1,195         37ms    56ms
+Delaware        8,046           8,217     8,212       1,112         39ms    77ms
+Rhode Island    14,251          15,138    15,132      1,218         94ms    77ms
+Vermont         6,308           6,860     6,843       1,100         28ms    64ms
+Wyoming         2,876           3,095     3,087       993           14ms    48ms
+
+v2 strategija: IXSCAN location_2dsphere za sve drzave (jedini kandidat, rejectedPlans: [])
+
+Napomena — Rhode Island (94ms) je sporiji od v1 (77ms): region od 40km oko Providencea
+pokriva 14,251 mesta sto je skoro cela Rhode Island kolekcija. Kada je pokrivenost velika,
+overhead S2 geometrijskog indeksa (mnogo seeks-ova i bounds-ova) moze biti veci od koristi,
+jer COLLSCAN pri toj gustini nije bio mnogo sporiji. Za retke regione (Wyoming, Vermont)
+ubrzanje je ociglednije (2–3x).
+
+Ukupno v1 Q2a+Q2b: ~100–143ms
+Ukupno v2:         ~15–96ms (category_stats lookup + regionalni pipeline)
+
+====================================================
+UPIT 3 - Cene vs prosecne ocene
+====================================================
+v2 ne radi nikakvu agregaciju nad 'places' (66,800 dok.) — sve cita iz
+pre-computed kolekcija koje su bile popunjene pri ucitavanju podataka.
+
+Kolekcija          Dok.  Vreme   Strategija
+------------------ ----- ------- ----------
+states             5     0ms     COLLSCAN (trivijalno)
+price_tier_stats   20    0ms     COLLSCAN (trivijalno)
+Ukupno v2:         25    ~0ms
+
+v1 Q3a (statistike pokrivenosti cenom, COLLSCAN 66,800): 83ms
+v1 Q3b (cenovni rangovi po drzavi, COLLSCAN 66,800 × 5): 37–59ms po drzavi
+
+Ubrzanje: agregacija nad 66,800 dokumentima u potpunosti eliminisana.
+Rezultat je uvek dostupan u <1ms bez obzira na velicinu kolekcije.
+
+====================================================
+UPIT 4 - Nagli pad ocene u vremenskom prozoru
+====================================================
+v2 strategija — reviews $match: IXSCAN state_name_1_time_1 (compound)
+v2 strategija — $lookup places:  IXSCAN gmap_id_1 (collectionScans: 0)
+
+v1: COLLSCAN reviews (6,707,912) + COLLSCAN places po svakom $lookup biznisu
+v2: IXSCAN skenira samo recenzije u prozoru za tu drzavu + O(1) lookup po gmap_id indeksu
+
+Drzava       Rev. skenirano  $lookup poziva  $lookup dok.  Vraceno  Vreme   v1 Vreme
+------------ --------------- --------------- ------------- -------- ------- ---------
+Alaska       667             119             119           14       78ms    6,844ms
+Delaware     982             144             144           20       84ms    7,853ms
+Rhode Island 876             147             147           19       86ms    8,115ms
+Vermont      462             85              85            9        63ms    5,900ms
+Wyoming      486             80              80            8        72ms    5,933ms
+
+v1: reviews uvek 6,707,912 skeniranih; places: N_biznisa × 66,800 po $lookup
+v2: reviews 462–982 skeniranih (~10,000x manje); $lookup 80–147 index poziva (~60,000x manje)
+Ubrzanje: ~80–100x
+
+====================================================
+UPIT 5 - Biznisi sa visokim procentom praznih komentara
+====================================================
+v2 arhitekturalna promena:
+  - pct_bez_teksta je izracunato pri ucitavanju i upisano u svaki places dokument
+  - category_text_stats kolekcija (~2,300 dok.) sadrzi prosek po kategoriji — citanje ~1ms
+  - Upit postaje jednostavan .find() nad places, nema agregacije nad reviews
+
+v2 strategija: COLLSCAN places (66,418 dok.) — nema indeksa na state_name + pct_bez_teksta
+Kolekcija places ima 66,418 dok. (382 manje od v1 — deduplikacija po gmap_id pri ucitavanju)
+
+Drzava          Dok. sken.  Vraceno  Vreme   v1 Vreme
+--------------- ----------- -------- ------- ----------
+Alaska          66,418      5,188    39ms    165,589ms
+Delaware        66,418      7,456    34ms    257,630ms
+Rhode Island    66,418      8,023    36ms    279,134ms
+Vermont         66,418      4,614    37ms    164,629ms
+Wyoming         66,418      5,054    53ms    182,502ms
+
+Napomena: query je i dalje COLLSCAN na places jer nema indeksa koji pokriva kombinaciju
+(state_name, pct_bez_teksta, num_of_reviews). Uprkos tome, ubrzanje je drasticno jer:
+  v1 skenirani dokumenti: 300M–537M (reviews × $lookup places po biznisu)
+  v2 skenirani dokumenti: 66,418 (samo places)
+Ubrzanje: ~3,000–5,000x
+
